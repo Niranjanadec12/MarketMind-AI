@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, AlertTriangle, CheckCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle } from 'lucide-react';
 
 export default function InventoryTable({ items }) {
   if (!items || items.length === 0) {

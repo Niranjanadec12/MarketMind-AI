@@ -5,8 +5,10 @@ import os
 from database import engine, Base
 from routers import sales, inventory, analytics, auth, users
 
-# Create Database tables if not existing
+
+# Create database tables if they do not already exist
 Base.metadata.create_all(bind=engine)
+
 
 app = FastAPI(
     title="MarketMind AI Backend API",
@@ -14,21 +16,28 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration to allow local React frontend requests
+
+# CORS configuration
+# React is currently running on localhost:5174
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5174",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register API Routers
+
+# Register API routers
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(sales.router)
 app.include_router(inventory.router)
 app.include_router(analytics.router)
+
 
 @app.get("/")
 def read_root():
@@ -40,6 +49,7 @@ def read_root():
         "documentation": "/docs"
     }
 
+
 @app.get("/api/v1/health")
 def health_check():
     return {
@@ -48,6 +58,13 @@ def health_check():
         "environment": "development"
     }
 
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+
+    uvicorn.run(
+        "main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True
+    )

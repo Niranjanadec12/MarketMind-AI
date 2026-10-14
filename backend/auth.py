@@ -11,7 +11,13 @@ from database import get_db
 import models
 import schemas
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "marketmind_super_secret_jwt_key_2026_secure")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+
+if not SECRET_KEY:
+    raise RuntimeError(
+        "JWT_SECRET_KEY environment variable is required for the legacy backend."
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 

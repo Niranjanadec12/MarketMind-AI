@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import os
 
 from jose import jwt
 from pwdlib import PasswordHash
@@ -6,7 +7,16 @@ from pwdlib import PasswordHash
 
 password_hash = PasswordHash.recommended()
 
-SECRET_KEY = "marketmind-development-secret-key-change-later"
+
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY environment variable is required. "
+        "Configure it before starting the application."
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

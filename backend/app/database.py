@@ -1,27 +1,38 @@
+import os
+from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Database URL
-DATABASE_URL = "sqlite:///./marketmind.db"
+BASE_DIR = Path(__file__).resolve().parents[2]
 
-# Create database engine
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}
+# Keep the existing local database path unless Docker supplies DATABASE_URL.
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    f"sqlite:///{BASE_DIR / 'marketmind.db'}",
 )
 
-# Create database session
+# SQLite needs this setting when used with FastAPI.
+connect_args = (
+    {"check_same_thread": False}
+    if DATABASE_URL.startswith("sqlite")
+    else {}
+)
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+)
+
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
 
-# Base class for database models
 Base = declarative_base()
 
 
-# Database dependency
 def get_db():
     db = SessionLocal()
     try:
