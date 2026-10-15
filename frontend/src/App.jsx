@@ -1,6 +1,7 @@
-
+﻿
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
+import AnalyticsReports from "./AnalyticsReports";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -16,8 +17,96 @@ const API = {
   segments: "/api/analytics/segments",
   forecast: "/api/analytics/forecast",
   comparison: "/api/analytics/model-comparison",
+  salesSummary: "/api/sales/summary",
+  salesRecords: "/api/sales/records",
+  insights: "/api/analytics/dashboard-insights",
 };
 
+function DonutChart({ items, total }) {
+  const colors = ["#dc5b62", "#e6a23c", "#3a9d78", "#6688d9", "#9470c8"];
+  const circumference = 2 * Math.PI * 42;
+  let currentOffset = 0;
+
+  const segments = items.map(([label, count], index) => {
+    const numericCount = Number(count) || 0;
+    const length = total > 0 ? (numericCount / total) * circumference : 0;
+    const segment = {
+      label,
+      count: numericCount,
+      color: colors[index % colors.length],
+      length,
+      offset: currentOffset,
+    };
+    currentOffset += length;
+    return segment;
+  });
+
+  return (
+    <div className="ai-donut-layout">
+      <div className="ai-donut-visual">
+        <svg viewBox="0 0 120 120" role="img" aria-label="Customer churn risk distribution">
+          <circle cx="60" cy="60" r="42" fill="none"
+            stroke="var(--border-color, #e2e8f0)" strokeWidth="16" />
+          {segments.map((segment) => (
+            <circle key={segment.label} cx="60" cy="60" r="42" fill="none"
+              stroke={segment.color} strokeWidth="16"
+              strokeDasharray={`${segment.length} ${circumference - segment.length}`}
+              strokeDashoffset={-segment.offset}
+              transform="rotate(-90 60 60)">
+              <title>{segment.label}: {formatNumber(segment.count)}</title>
+            </circle>
+          ))}
+          <text x="60" y="57" textAnchor="middle" className="ai-donut-total">
+            {formatNumber(total)}
+          </text>
+          <text x="60" y="72" textAnchor="middle" className="ai-donut-caption">
+            Customers
+          </text>
+        </svg>
+      </div>
+      <ul className="ai-chart-legend">
+        {segments.map((segment) => (
+          <li key={segment.label}>
+            <span className="ai-legend-label">
+              <span className="ai-legend-dot" style={{ backgroundColor: segment.color }} />
+              {formatLabel(segment.label)}
+            </span>
+            <strong>{formatNumber(segment.count)}</strong>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function HorizontalBarChart({ items, formatValue }) {
+  const maxValue = Math.max(
+    1,
+    ...items.map((item) => Math.max(0, Number(item.value) || 0))
+  );
+
+  return (
+    <div className="ai-horizontal-bars">
+      {items.map((item, index) => {
+        const value = Math.max(0, Number(item.value) || 0);
+        const width = (value / maxValue) * 100;
+
+        return (
+          <div className="ai-bar-row" key={`${item.label}-${index}`}>
+            <div className="ai-bar-heading">
+              <span>{item.label}</span>
+              <strong>{formatValue(value)}</strong>
+            </div>
+            {item.detail && <p className="ai-bar-detail">{item.detail}</p>}
+            <div className="ai-bar-track">
+              <div className="ai-bar-fill" style={{ width: `${width}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 const numberFormatter = new Intl.NumberFormat("en-IN");
 
 const currencyFormatter = new Intl.NumberFormat("en-IN", {
@@ -29,7 +118,7 @@ const currencyFormatter = new Intl.NumberFormat("en-IN", {
 
 function formatNumber(value) {
   const number = Number(value);
-  return Number.isFinite(number) ? numberFormatter.format(number) : "—";
+  return Number.isFinite(number) ? numberFormatter.format(number) : "â€”";
 }
 
 // Convert a Brazilian-real amount to Indian rupees.
@@ -47,14 +136,14 @@ function convertBRLToINR(value) {
 function formatINR(value) {
   const amount = Number(value);
 
-  return Number.isFinite(amount) ? currencyFormatter.format(amount) : "—";
+  return Number.isFinite(amount) ? currencyFormatter.format(amount) : "â€”";
 }
 
 // Use this for monetary values received from the API in BRL.
 function formatBRLAsINR(value) {
   const convertedAmount = convertBRLToINR(value);
 
-  return convertedAmount === null ? "—" : formatINR(convertedAmount);
+  return convertedAmount === null ? "â€”" : formatINR(convertedAmount);
 }
 
 // Convert and format monetary columns in forecast/comparison tables.
@@ -62,7 +151,7 @@ function formatBRLAsINR(value) {
 // values are deliberately left unchanged.
 function formatTableValue(key, value) {
   if (value === null || value === undefined || value === "") {
-    return "—";
+    return "â€”";
   }
 
   const field = String(key).toLowerCase();
@@ -279,12 +368,16 @@ function MetricCard({ title, value, description }) {
   );
 }
 
+
 function AuthScreen({ onAuthenticated }) {
   const [mode, setMode] = useState("login");
   const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [role, setRole] = useState("Store Manager");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -319,10 +412,13 @@ function AuthScreen({ onAuthenticated }) {
         await requestJson(API.register, {
           method: "POST",
           body: JSON.stringify({
+            username,
             full_name: fullName,
             email,
             password,
+            role,
           }),
+
         });
 
         setMessage("Registration successful. Please sign in.");
@@ -373,6 +469,38 @@ function AuthScreen({ onAuthenticated }) {
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
+        
+          {mode === "register" && (
+            <>
+              <label>
+                Username
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  placeholder="Choose a username (at least 3 characters)"
+                  autoComplete="username"
+                  minLength={3}
+                  required
+                />
+              </label>
+
+              <label>
+                Role
+                <select
+                  value={role}
+                  onChange={(event) => setRole(event.target.value)}
+                  required
+                >
+                  <option value="Business Owner">Business Owner</option>
+                  <option value="Store Manager">Store Manager</option>
+                  <option value="Sales Executive">Sales Executive</option>
+                  <option value="Administrator">Administrator</option>
+                </select>
+              </label>
+            </>
+          )}
+
           {mode === "register" && (
             <label>
               Full name
@@ -439,16 +567,30 @@ function App() {
   );
 
   const [dashboardData, setDashboardData] = useState(null);
+  const [insightsData, setInsightsData] = useState(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState("");
+  const [trendPeriod, setTrendPeriod] = useState("daily");
   const [segmentsData, setSegmentsData] = useState(null);
   const [forecastData, setForecastData] = useState(null);
   const [comparisonData, setComparisonData] = useState(null);
+  const [salesSummary, setSalesSummary] = useState(null);
+  const [salesRecords, setSalesRecords] = useState([]);
+  const [salesTotal, setSalesTotal] = useState(0);
+  const [salesSearch, setSalesSearch] = useState("");
+  const [salesStatus, setSalesStatus] = useState("");
+  const [salesOffset, setSalesOffset] = useState(0);
 
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [salesError, setSalesError] = useState("");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
   const [analyticsError, setAnalyticsError] = useState("");
 
   const [activeSection, setActiveSection] = useState("overview");
+  const [forecastHorizon, setForecastHorizon] = useState("30");
+  const [forecastModel, setForecastModel] = useState("random_forest_forecast");
 
   const handleAuthenticated = useCallback((newToken) => {
     localStorage.setItem("access_token", newToken);
@@ -468,6 +610,7 @@ function App() {
       localStorage.removeItem("access_token");
       setToken("");
       setDashboardData(null);
+      setInsightsData(null);
       setSegmentsData(null);
       setForecastData(null);
       setComparisonData(null);
@@ -489,6 +632,19 @@ function App() {
   }, [token]);
 
  
+  const loadDashboardInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    setInsightsError("");
+    try {
+      const data = await requestJson(API.insights, {}, token);
+      setInsightsData(data);
+    } catch (err) {
+      setInsightsError(err.message || "Could not load dashboard insights.");
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, [token]);
+
   const loadAnalytics = useCallback(async () => {
   setAnalyticsLoading(true);
   setAnalyticsError("");
@@ -533,12 +689,67 @@ function App() {
 }, [token]);
 
 
+  const loadSalesSummary = useCallback(async () => {
+    try {
+      const data = await requestJson(API.salesSummary, {}, token);
+      setSalesSummary(data);
+    } catch (err) {
+      setSalesError(err.message || "Could not load the sales summary.");
+    }
+  }, [token]);
+
+  const loadSalesRecords = useCallback(async (
+    offset = 0,
+    search = "",
+    status = ""
+  ) => {
+    setSalesLoading(true);
+    setSalesError("");
+
+    try {
+      const params = new URLSearchParams({
+        limit: "25",
+        offset: String(offset),
+      });
+
+      if (search.trim()) params.set("search", search.trim());
+      if (status) params.set("status", status);
+
+      const data = await requestJson(
+        `${API.salesRecords}?${params.toString()}`,
+        {},
+        token
+      );
+
+      setSalesRecords(data.records || []);
+      setSalesTotal(data.total || 0);
+    } catch (err) {
+      setSalesError(err.message || "Could not load sales records.");
+    } finally {
+      setSalesLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     if (!token) return;
 
     loadDashboard();
     loadAnalytics();
-  }, [token, loadDashboard, loadAnalytics]);
+    loadDashboardInsights();
+  }, [token, loadDashboard, loadAnalytics, loadDashboardInsights]);
+
+  useEffect(() => {
+    if (!token || activeSection !== "sales") return;
+
+    loadSalesSummary();
+    loadSalesRecords(0, salesSearch, salesStatus);
+    setSalesOffset(0);
+  }, [
+    token,
+    activeSection,
+    loadSalesSummary,
+    loadSalesRecords,
+  ]);
 
   if (!token) {
     return <AuthScreen onAuthenticated={handleAuthenticated} />;
@@ -550,7 +761,7 @@ function App() {
       value:
         dashboardData?.total_sales != null
           ? formatBRLAsINR(dashboardData.total_sales)
-          : "—",
+          : "â€”",
       description: "Delivered sales, including freight (converted to INR)",
     },
     {
@@ -558,7 +769,7 @@ function App() {
       value:
         dashboardData?.total_orders != null
           ? formatNumber(dashboardData.total_orders)
-          : "—",
+          : "â€”",
       description: "Distinct delivered orders",
     },
     {
@@ -566,7 +777,7 @@ function App() {
       value:
         dashboardData?.total_customers != null
           ? formatNumber(dashboardData.total_customers)
-          : "—",
+          : "â€”",
       description: "Unique customers",
     },
     {
@@ -574,17 +785,85 @@ function App() {
       value:
         dashboardData?.total_products != null
           ? formatNumber(dashboardData.total_products)
-          : "—",
+          : "â€”",
       description: "Distinct products",
     },
   ];
 
+  
+  const forecastRows = Array.isArray(forecastData?.forecasts)
+    ? forecastData.forecasts
+    : [];
+
+  const visibleForecastRows = forecastRows.slice(0, Number(forecastHorizon));
+  const forecastValues = visibleForecastRows
+    .map((row) => Number(row[forecastModel]))
+    .filter((value) => Number.isFinite(value));
+
+  const chartMin = forecastValues.length ? Math.min(...forecastValues) : 0;
+  const chartMax = forecastValues.length ? Math.max(...forecastValues) : 1;
+  const chartRange = chartMax - chartMin || 1;
+  const chartWidth = 900;
+  const chartHeight = 280;
+  const chartPadding = 42;
+
+  const forecastChartPoints = visibleForecastRows
+    .map((row, index) => {
+      const value = Number(row[forecastModel]);
+      if (!Number.isFinite(value)) return null;
+
+      const x = visibleForecastRows.length <= 1
+        ? chartWidth / 2
+        : chartPadding + index * (chartWidth - chartPadding * 2) /
+          (visibleForecastRows.length - 1);
+      const y = chartHeight - chartPadding -
+        ((value - chartMin) / chartRange) *
+          (chartHeight - chartPadding * 2);
+
+      return { x, y, value, date: row.ds };
+    })
+    .filter(Boolean);
   const navigation = [
     { id: "overview", label: "Overview" },
+    { id: "sales", label: "Sales" },
     { id: "segments", label: "Customer Segmentation" },
     { id: "forecast", label: "Revenue Forecast" },
     { id: "comparison", label: "Model Comparison" },
+    { id: "churn", label: "Churn Prediction" },
+    { id: "recommendations", label: "Product Recommendations" },
+    { id: "anomalies", label: "Anomaly Detection" },
+    { id: "reports", label: "Analytics & Reports" },
   ];
+
+  const roleAccess = {
+    "Business Owner": [
+      "overview", "sales", "segments", "forecast", "comparison",
+      "churn", "recommendations", "anomalies", "reports"
+    ],
+    "Store Manager": [
+      "overview", "sales", "segments", "forecast",
+      "churn", "recommendations", "anomalies", "reports"
+    ],
+    "Sales Executive": [
+      "overview", "sales"
+    ],
+    "Administrator": [
+      "overview", "sales", "segments", "forecast", "comparison",
+      "churn", "recommendations", "anomalies", "reports"
+    ]
+  };
+
+  const allowedSections = roleAccess[dashboardData?.role] || ["overview"];
+
+  const visibleNavigation = navigation.filter(
+    (item) => allowedSections.includes(item.id)
+  );
+
+useEffect(() => {
+  if (!allowedSections.includes(activeSection)) {
+    setActiveSection("overview");
+  }
+}, [activeSection, dashboardData?.role]);
 
   return (
     <div className="app-shell">
@@ -600,7 +879,7 @@ function App() {
         <p className="nav-heading">WORKSPACE</p>
 
         <nav className="sidebar-nav">
-          {navigation.map((item) => (
+          {visibleNavigation.map((item) => (
             <button
               type="button"
               key={item.id}
@@ -653,8 +932,13 @@ function App() {
             onClick={() => {
               loadDashboard();
               loadAnalytics();
+              loadDashboardInsights();
+              if (activeSection === "sales") {
+                loadSalesSummary();
+                loadSalesRecords(salesOffset, salesSearch, salesStatus);
+              }
             }}
-            disabled={dashboardLoading || analyticsLoading}
+            disabled={dashboardLoading || analyticsLoading || salesLoading}
           >
             {dashboardLoading || analyticsLoading
               ? "Refreshing..."
@@ -683,7 +967,7 @@ function App() {
                   revenue forecasting results.
                 </p>
               </div>
-              <div className="welcome-symbol">↗</div>
+              <div className="welcome-symbol">â†—</div>
             </section>
 
             <section className="section-block">
@@ -722,6 +1006,107 @@ function App() {
             <section className="section-block">
               <div className="section-heading">
                 <div>
+                  <p className="eyebrow">SALES PERFORMANCE</p>
+                  <h2>Revenue trends</h2>
+                  <p className="section-description">Historical delivered order items, including freight. Values shown in INR.</p>
+                </div>
+                <div className="trend-tabs">
+                  {["daily", "weekly", "monthly"].map((period) => (
+                    <button key={period} type="button" className={trendPeriod === period ? "trend-tab active" : "trend-tab"} onClick={() => setTrendPeriod(period)}>
+                      {formatLabel(period)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {insightsLoading && !insightsData ? (
+                <div className="loading-panel">Loading sales and AI insights...</div>
+              ) : insightsError ? (
+                <div className="alert alert-warning">{insightsError}</div>
+              ) : insightsData ? (
+                <>
+                  <div className="data-panel">
+                    <p className="data-footnote">Historical data: 2016â€“2018. Hover over a bar to see its date and revenue.</p>
+                    {(() => {
+                      const rows = insightsData.sales_trends?.[trendPeriod] || [];
+                      const maxRevenue = Math.max(1, ...rows.map((item) => Number(item.revenue) || 0));
+                      return rows.length ? (
+                        <div className="trend-chart">
+                          {rows.map((item) => (
+                            <div className="trend-column" key={item.period} title={`${item.period}: ${formatBRLAsINR(item.revenue)}`}>
+                              <div className="trend-bar" style={{ height: `${Math.max(3, (Number(item.revenue) / maxRevenue) * 150)}px` }} />
+                              <span>{trendPeriod === "daily" ? item.period.slice(8) : trendPeriod === "monthly" ? item.period.slice(2) : item.period.slice(5, 10)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <p>No trend data available for this period.</p>;
+                    })()}
+                  </div>
+
+                  <div className="insight-grid">
+                    <div className="data-panel">
+                      <h3>Top-selling products</h3>
+                      {(insightsData.top_products || []).map((product) => (
+                        <div className="insight-row" key={product.product_id}>
+                          <div><strong>{formatLabel(product.product_category_name_english || "Product")}</strong><p>{product.product_id}</p><span>{formatNumber(product.total_items_sold)} items sold</span></div>
+                          <strong>{formatBRLAsINR(product.total_sales)}</strong>
+                        </div>
+                      ))}
+                      {!insightsData.top_products?.length && <p>No product analytics available.</p>}
+                    </div>
+
+                    <div className="data-panel">
+                      <h3>Inventory alerts</h3>
+                      <div className="insight-stat"><span>Low-stock items</span><strong>{formatNumber(insightsData.inventory?.low_stock_items)}</strong></div>
+                      <div className="insight-stat"><span>Stockout-risk items</span><strong>{formatNumber(insightsData.inventory?.stockout_risk_items)}</strong></div>
+                      <p className="data-footnote">Latest inventory snapshot: {insightsData.inventory?.latest_snapshot_date || "Unavailable"}. These are historical figures, not live stock.</p>
+                    </div>
+
+                    <div className="data-panel">
+                      <h3>AI business summary</h3>
+                      <div className="insight-stat"><span>Forecast model</span><strong>{insightsData.forecast?.model || "Unavailable"}</strong></div>
+                      <div className="insight-stat"><span>Average daily forecast</span><strong>{formatBRLAsINR(insightsData.forecast?.average_daily_forecast_brl)}</strong></div>
+                      <p className="data-footnote">{formatNumber(insightsData.forecast?.forecast_days)} forecast days: {insightsData.forecast?.forecast_start || "â€”"} to {insightsData.forecast?.forecast_end || "â€”"}. Forecast is based on historical data.</p>
+                      <hr />
+                      <h3>Customer segments</h3>
+                      {Object.entries(insightsData.segments?.segment_counts || {}).map(([name, count]) => (
+                        <div className="insight-stat" key={name}><span>{name}</span><strong>{formatNumber(count)}</strong></div>
+                      ))}
+                    </div>
+
+                    <div className="data-panel">
+                      <h3>Churn risk</h3>
+                      {Object.entries(insightsData.churn?.risk_counts || {}).map(([risk, count]) => (
+                        <div className="insight-stat" key={risk}><span>{risk} risk</span><strong>{formatNumber(count)}</strong></div>
+                      ))}
+                      <p className="data-footnote">Existing model predictions; counts are not live customer activity.</p>
+                      <hr />
+                      <h3>Anomaly alerts</h3>
+                      <div className="insight-stat"><span>Total alerts</span><strong>{formatNumber(insightsData.anomalies?.total_alerts)}</strong></div>
+                      {Object.entries(insightsData.anomalies?.severity_counts || {}).map(([severity, count]) => (
+                        <div className="insight-stat" key={severity}><span>{severity}</span><strong>{formatNumber(count)}</strong></div>
+                      ))}
+                    </div>
+
+                    <div className="data-panel">
+                      <h3>Product suggestions</h3>
+                      {(insightsData.product_suggestions || []).map((suggestion) => (
+                        <div className="insight-row" key={suggestion.product_id}>
+                          <div><strong>{formatLabel(suggestion.category || "Product")}</strong><p>{suggestion.product_id}</p><span>{suggestion.reason || "Suggested by existing recommendation output"}</span></div>
+                          <strong>{formatNumber(suggestion.score)}</strong>
+                        </div>
+                      ))}
+                      {!insightsData.product_suggestions?.length && <p>No product suggestions available.</p>}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="loading-panel">Insights are not available yet.</div>
+              )}
+            </section>
+            <section className="section-block">
+              <div className="section-heading">
+                <div>
                   <p className="eyebrow">MACHINE LEARNING</p>
                   <h2>Analytics summary</h2>
                 </div>
@@ -732,36 +1117,36 @@ function App() {
                   className="summary-card"
                   onClick={() => setActiveSection("segments")}
                 >
-                  <span className="summary-icon purple">◎</span>
+                  <span className="summary-icon purple">â—Ž</span>
                   <span className="summary-title">Customer Segmentation</span>
                   <span className="summary-description">
                     Explore customer groups and cluster distributions.
                   </span>
-                  <span className="summary-link">View segments →</span>
+                  <span className="summary-link">View segments â†’</span>
                 </button>
 
                 <button
                   className="summary-card"
                   onClick={() => setActiveSection("forecast")}
                 >
-                  <span className="summary-icon blue">↗</span>
+                  <span className="summary-icon blue">â†—</span>
                   <span className="summary-title">Revenue Forecast</span>
                   <span className="summary-description">
                     Review the forecasts produced by your models.
                   </span>
-                  <span className="summary-link">View forecasts →</span>
+                  <span className="summary-link">View forecasts â†’</span>
                 </button>
 
                 <button
                   className="summary-card"
                   onClick={() => setActiveSection("comparison")}
                 >
-                  <span className="summary-icon orange">▥</span>
+                  <span className="summary-icon orange">â–¥</span>
                   <span className="summary-title">Model Comparison</span>
                   <span className="summary-description">
                     Compare forecasting model error metrics.
                   </span>
-                  <span className="summary-link">Compare models →</span>
+                  <span className="summary-link">Compare models â†’</span>
                 </button>
               </div>
             </section>
@@ -807,6 +1192,43 @@ function App() {
                   />
                 </div>
 
+                <div className="segment-analysis-grid">
+                  {segmentsData.segments?.map((segment) => {
+                    const total = Number(segmentsData.total_customers || 0);
+                    const count = Number(segment.customer_count || 0);
+                    const percentage = total > 0 ? (count / total) * 100 : 0;
+
+                    return (
+                      <article className="segment-analysis-card" key={segment.hierarchical_cluster}>
+                        <div className="segment-card-heading">
+                          <span>{segment.segment_name || `Cluster ${segment.hierarchical_cluster}`}</span>
+                          <strong>{formatNumber(count)}</strong>
+                        </div>
+                        <div className="segment-bar-track">
+                          <div className="segment-bar-fill" style={{ width: `${percentage}%` }} />
+                        </div>
+                        <p>{percentage.toFixed(1)}% of all customers</p>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <div className="data-panel segment-marketing-panel">
+                  <h3>Marketing insights</h3>
+                  <div className="segment-insight-item">
+                    <strong>Re-engage one-time customers</strong>
+                    <p>Recent One-Time Customers are the largest group. Test follow-up campaigns and relevant product offers to encourage a second purchase.</p>
+                  </div>
+                  <div className="segment-insight-item">
+                    <strong>Win back inactive customers</strong>
+                    <p>Consider targeted reactivation campaigns for Inactive / Low-Value Customers, then measure whether they return.</p>
+                  </div>
+                  <div className="segment-insight-item">
+                    <strong>Retain high-value repeat customers</strong>
+                    <p>Consider loyalty rewards and personalized recommendations for Repeat High-Value Customers.</p>
+                  </div>
+                  <p className="data-footnote">These are suggested actions based on segment labels and sizes, not measured campaign results.</p>
+                </div>
                 <div className="data-panel">
                   <DataTable
                     data={segmentsData}
@@ -846,7 +1268,118 @@ function App() {
               <div className="loading-panel">Loading forecasts...</div>
             )}
 
-            {forecastData && (
+            <div className="forecast-chart-controls" data-feature="forecast-chart-controls">
+  <div className="forecast-control">
+    <label htmlFor="forecast-model">Forecast model</label>
+    <select
+      id="forecast-model"
+      value={forecastModel}
+      onChange={(event) => setForecastModel(event.target.value)}
+    >
+      <option value="random_forest_forecast">Random Forest</option>
+      <option value="xgboost_forecast">XGBoost</option>
+      <option value="prophet_forecast">Prophet</option>
+    </select>
+  </div>
+
+  <div className="forecast-control">
+    <label htmlFor="forecast-horizon">Forecast horizon</label>
+    <select
+      id="forecast-horizon"
+      value={forecastHorizon}
+      onChange={(event) => setForecastHorizon(event.target.value)}
+    >
+      <option value="30">Next 30 days</option>
+      <option value="60">Next 60 days</option>
+      <option value="90">Next 90 days</option>
+    </select>
+  </div>
+</div>
+
+<div className="data-panel forecast-chart-panel">
+  <div className="forecast-chart-heading">
+    <div>
+      <h3>
+        {forecastModel === "random_forest_forecast"
+          ? "Random Forest"
+          : forecastModel === "xgboost_forecast"
+            ? "XGBoost"
+            : "Prophet"} revenue forecast
+      </h3>
+      <p className="data-footnote">
+        Forecast values are converted from BRL to INR for display.
+      </p>
+    </div>
+    {forecastValues.length > 0 && (
+      <div className="forecast-chart-summary">
+        <span>Average daily forecast</span>
+        <strong>
+          {formatBRLAsINR(
+            forecastValues.reduce((sum, value) => sum + value, 0) /
+              forecastValues.length
+          )}
+        </strong>
+      </div>
+    )}
+  </div>
+
+  {forecastChartPoints.length > 0 ? (
+    <div className="forecast-chart-scroll">
+      <svg
+        className="forecast-line-chart"
+        viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+        role="img"
+        aria-label="Revenue forecast line chart"
+      >
+        {[0, 1, 2, 3, 4].map((tick) => {
+          const y = chartPadding +
+            tick * (chartHeight - chartPadding * 2) / 4;
+          return (
+            <line
+              key={tick}
+              x1={chartPadding}
+              y1={y}
+              x2={chartWidth - chartPadding}
+              y2={y}
+              className="forecast-grid-line"
+            />
+          );
+        })}
+        <polyline
+          points={forecastChartPoints
+            .map((point) => `${point.x},${point.y}`)
+            .join(" ")}
+          className="forecast-line"
+        />
+        {forecastChartPoints.map((point, index) => (
+          <circle
+            key={`${point.date}-${index}`}
+            cx={point.x}
+            cy={point.y}
+            r="3"
+            className="forecast-chart-point"
+          >
+            <title>
+              {point.date}: {formatBRLAsINR(point.value)}
+            </title>
+          </circle>
+        ))}
+      </svg>
+      <div className="forecast-chart-labels">
+        <span>{visibleForecastRows[0]?.ds}</span>
+        <span>{visibleForecastRows[visibleForecastRows.length - 1]?.ds}</span>
+      </div>
+    </div>
+  ) : (
+    <p className="empty-message">No forecast values are available for this model.</p>
+  )}
+
+  <p className="data-footnote">
+    Hover over a chart point to view its date and predicted value.
+    Historical actuals are not included in this forecast API response.
+  </p>
+</div>
+{forecastData && (
               <div className="data-panel">
                 <DataTable
                   data={forecastData}
@@ -862,6 +1395,206 @@ function App() {
               </div>
             )}
           </section>
+        )}
+
+                {activeSection === "churn" && (
+          <section className="section-block">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">CUSTOMER RETENTION</p>
+                <h2>Churn Prediction</h2>
+                <p className="section-description">
+                  Review the risk categories produced by the existing churn prediction output.
+                </p>
+              </div>
+            </div>
+
+            {insightsData?.churn ? (
+              <>
+                <div className="ai-summary-grid">
+                  <div className="data-panel ai-summary-card">
+                    <span>Total predictions</span>
+                    <strong>{formatNumber(insightsData.churn.total_predictions)}</strong>
+                  </div>
+                  {Object.entries(insightsData.churn.risk_counts || {}).map(([risk, count]) => (
+                    <div className="data-panel ai-summary-card" key={risk}>
+                      <span>{formatLabel(risk)} risk</span>
+                      <strong>{formatNumber(count)}</strong>
+                      <span>
+                        {insightsData.churn.total_predictions
+                          ? `${((Number(count) / insightsData.churn.total_predictions) * 100).toFixed(1)}% of predictions`
+                          : "No predictions"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                              <div className="data-panel ai-chart-panel">
+                <h3>Churn risk distribution</h3>
+                <p className="data-footnote">
+                  Share of customers in each risk category.
+                </p>
+                <DonutChart
+                  items={Object.entries(insightsData.churn.risk_counts || {})}
+                  total={Number(insightsData.churn.total_predictions) || 0}
+                />
+              </div>
+<div className="data-panel ai-explanation">
+                  <h3>Recommended actions</h3>
+                  <ul>
+                    <li><strong>High risk:</strong> Prioritize personal outreach and investigate reasons for reduced engagement.</li>
+                    <li><strong>Medium risk:</strong> Try relevant offers and timely follow-ups.</li>
+                    <li><strong>Low risk:</strong> Maintain service quality and encourage repeat purchases.</li>
+                  </ul>
+                  <p className="data-footnote">
+                    This page displays risk-category totals only. Individual customer records and churn probabilities are not returned by the current dashboard insights endpoint.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="empty-message">
+                {insightsLoading ? "Loading churn insights..." : "Churn summary data is unavailable."}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeSection === "recommendations" && (
+          <section className="section-block">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">PRODUCT DISCOVERY</p>
+                <h2>Product Recommendations</h2>
+                <p className="section-description">
+                  Review the product suggestions generated by the existing recommendation output.
+                </p>
+              </div>
+            </div>
+
+            {insightsData?.product_suggestions?.length > 0 ? (
+              <>
+                <div className="ai-summary-grid">
+                  <div className="data-panel ai-summary-card">
+                    <span>Available suggestions</span>
+                    <strong>{formatNumber(insightsData.product_suggestions.length)}</strong>
+                  </div>
+                </div>
+                                <div className="data-panel ai-chart-panel">
+                  <h3>Recommendation score comparison</h3>
+                  <p className="data-footnote">
+                    Scores are shown as returned by the model and are not percentages.
+                  </p>
+                  <HorizontalBarChart
+                    items={insightsData.product_suggestions.map((suggestion, index) => ({
+                      label: String(suggestion.product_id ?? `Product ${index + 1}`),
+                      detail: formatLabel(suggestion.category || "Product"),
+                      value: Number(suggestion.score) || 0,
+                    }))}
+                    formatValue={(value) => value.toFixed(3)}
+                  />
+                </div>
+<div className="ai-recommendation-grid">
+                  {insightsData.product_suggestions.map((suggestion, index) => (
+                    <article className="data-panel ai-recommendation-card"
+                      key={suggestion.product_id ?? `suggestion-${index}`}>
+                      <span className="eyebrow">SUGGESTION {index + 1}</span>
+                      <h3>{formatLabel(suggestion.category || "Product")}</h3>
+                      <p className="ai-product-id">
+                        Product ID: {suggestion.product_id ?? "Not provided"}
+                      </p>
+                      <p>{suggestion.reason || "Suggested by the existing recommendation output."}</p>
+                      {suggestion.score != null && (
+                        <div className="ai-score">
+                          <span>Recommendation score</span>
+                          <strong>{formatNumber(suggestion.score)}</strong>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+                <p className="data-footnote">
+                  Suggestions and scores are displayed as returned by the backend; the score is not assumed to be a percentage.
+                </p>
+              </>
+            ) : (
+              <div className="empty-message">
+                {insightsLoading ? "Loading product suggestions..." : "No product suggestions are currently available."}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeSection === "anomalies" && (
+          <section className="section-block">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">SALES MONITORING</p>
+                <h2>Anomaly Detection</h2>
+                <p className="section-description">
+                  Review the severity distribution from the existing anomaly detection results.
+                </p>
+              </div>
+            </div>
+
+            {insightsData?.anomalies ? (
+              <>
+                <div className="ai-summary-grid">
+                  <div className="data-panel ai-summary-card">
+                    <span>Total alerts</span>
+                    <strong>{formatNumber(insightsData.anomalies.total_alerts)}</strong>
+                  </div>
+                  {Object.entries(insightsData.anomalies.severity_counts || {}).map(([severity, count]) => (
+                    <div className="data-panel ai-summary-card" key={severity}>
+                      <span>{formatLabel(severity)} severity</span>
+                      <strong>{formatNumber(count)}</strong>
+                      <span>
+                        {insightsData.anomalies.total_alerts
+                          ? `${((Number(count) / insightsData.anomalies.total_alerts) * 100).toFixed(1)}% of alerts`
+                          : "No alerts"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                              <div className="data-panel ai-chart-panel">
+                <h3>Alerts by severity</h3>
+                <p className="data-footnote">
+                  Compare the number of alerts in each severity category.
+                </p>
+                <HorizontalBarChart
+                  items={Object.entries(insightsData.anomalies.severity_counts || {}).map(
+                    ([severity, count]) => ({
+                      label: `${formatLabel(severity)} severity`,
+                      value: Number(count) || 0,
+                    })
+                  )}
+                  formatValue={(value) => formatNumber(value)}
+                />
+              </div>
+<div className="data-panel ai-explanation">
+                  <h3>Suggested review workflow</h3>
+                  <ul>
+                    <li>Review high-severity alerts first.</li>
+                    <li>Compare flagged activity with the original transaction and sales records before taking action.</li>
+                    <li>Document investigated alerts and confirmed causes for follow-up.</li>
+                  </ul>
+                  <p className="data-footnote">
+                    The current endpoint returns alert totals by severity, not individual alert records or timestamps. These counts should not be interpreted as confirmed fraud.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="empty-message">
+                {insightsLoading ? "Loading anomaly insights..." : "Anomaly summary data is unavailable."}
+              </div>
+            )}
+          </section>
+        )}
+{activeSection === "reports" && (
+          <AnalyticsReports
+            insightsData={insightsData}
+            forecastData={forecastData}
+            comparisonData={comparisonData}
+            segmentsData={segmentsData}
+          />
         )}
 
         {activeSection === "comparison" && (
@@ -898,6 +1631,189 @@ function App() {
           </section>
         )}
 
+        {activeSection === "sales" && (
+          <section className="section-block">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">HISTORICAL SALES DATA</p>
+                <h2>Sales records</h2>
+                <p className="section-description">
+                  Sales figures are from sales_analytics.csv. Amounts are
+                  displayed in Brazilian reais (BRL).
+                </p>
+              </div>
+            </div>
+
+            {salesError && (
+              <div className="alert alert-error page-alert">
+                <strong>Sales error:</strong> {salesError}
+              </div>
+            )}
+
+            {salesSummary && (
+              <div className="kpi-grid">
+                <MetricCard
+                  title="Delivered Sales"
+                  value={new Intl.NumberFormat("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  }).format(salesSummary.total_sales || 0)}
+                  description="Delivered line-item value"
+                />
+                <MetricCard
+                  title="Delivered Orders"
+                  value={formatNumber(salesSummary.delivered_orders)}
+                  description="Distinct delivered orders"
+                />
+                <MetricCard
+                  title="Average Item Value"
+                  value={new Intl.NumberFormat("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  }).format(salesSummary.average_item_value || 0)}
+                  description="Average delivered line-item value"
+                />
+                <MetricCard
+                  title="All Sales Records"
+                  value={formatNumber(salesSummary.total_records)}
+                  description="All order statuses"
+                />
+              </div>
+            )}
+
+            <form
+              className="sales-filters"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setSalesOffset(0);
+                loadSalesRecords(0, salesSearch, salesStatus);
+              }}
+            >
+              <input
+                type="search"
+                aria-label="Search sales records"
+                placeholder="Search order, customer, or product ID"
+                value={salesSearch}
+                onChange={(event) => setSalesSearch(event.target.value)}
+              />
+
+              <select
+                aria-label="Filter by order status"
+                value={salesStatus}
+                onChange={(event) => setSalesStatus(event.target.value)}
+              >
+                <option value="">All statuses</option>
+                <option value="delivered">Delivered</option>
+                <option value="shipped">Shipped</option>
+                <option value="canceled">Canceled</option>
+                <option value="invoiced">Invoiced</option>
+                <option value="processing">Processing</option>
+                <option value="unavailable">Unavailable</option>
+                <option value="approved">Approved</option>
+              </select>
+
+              <button
+                type="submit"
+                className="secondary-button"
+                disabled={salesLoading}
+              >
+                Search / Filter
+              </button>
+            </form>
+
+            <div className="data-panel">
+              {salesLoading ? (
+                <div className="loading-panel">Loading sales records...</div>
+              ) : salesRecords.length === 0 ? (
+                <div className="loading-panel">
+                  No sales records match these filters.
+                </div>
+              ) : (
+                <div className="sales-table-wrap">
+                  <table className="sales-table">
+                    <thead>
+                      <tr>
+                        <th>Order ID</th>
+                        <th>Customer ID</th>
+                        <th>Product ID</th>
+                        <th>Category</th>
+                        <th>Status</th>
+                        <th>Purchase date</th>
+                        <th>Item value (BRL)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {salesRecords.map((record, index) => (
+                        <tr
+                          key={`${record.order_id}-${record.product_id}-${index}`}
+                        >
+                          <td>{record.order_id}</td>
+                          <td>{record.customer_id}</td>
+                          <td>{record.product_id}</td>
+                          <td>
+                            {record.product_category_name_english || "Unknown"}
+                          </td>
+                          <td>
+                            <span className="sales-status">
+                              {record.order_status}
+                            </span>
+                          </td>
+                          <td>{record.order_purchase_timestamp}</td>
+                          <td>
+                            {new Intl.NumberFormat("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            }).format(Number(record.total_item_value || 0))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="sales-pagination">
+              <span>
+                {salesTotal === 0
+                  ? "0 records"
+                  : `Showing ${salesOffset + 1}?${Math.min(
+                      salesOffset + salesRecords.length,
+                      salesTotal
+                    )} of ${formatNumber(salesTotal)} records`}
+              </span>
+              <div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={salesLoading || salesOffset === 0}
+                  onClick={() => {
+                    const nextOffset = Math.max(0, salesOffset - 25);
+                    setSalesOffset(nextOffset);
+                    loadSalesRecords(nextOffset, salesSearch, salesStatus);
+                  }}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={
+                    salesLoading || salesOffset + 25 >= salesTotal
+                  }
+                  onClick={() => {
+                    const nextOffset = salesOffset + 25;
+                    setSalesOffset(nextOffset);
+                    loadSalesRecords(nextOffset, salesSearch, salesStatus);
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {analyticsError && (
           <div className="alert alert-warning page-alert">
             <strong>Some analytics could not be loaded.</strong>
@@ -919,4 +1835,5 @@ function App() {
 }
 
 export default App;
+
 

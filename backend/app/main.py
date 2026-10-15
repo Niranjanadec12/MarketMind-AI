@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +8,8 @@ from app.auth import database_models
 from app.api.dashboard import router as dashboard_router
 from app.auth.routes import router as auth_router
 from app.api.analytics import router as analytics_router
+from app.api.sales import router as sales_router
+from app.api.dashboard_insights import router as dashboard_insights_router
 
 from app.auth import database_models
 
@@ -42,3 +44,6 @@ def root():
 app.include_router(dashboard_router)
 app.include_router(auth_router)
 app.include_router(analytics_router)
+app.include_router(sales_router)
+app.include_router(dashboard_insights_router)
+

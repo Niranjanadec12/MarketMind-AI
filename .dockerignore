@@ -42,3 +42,7 @@ Thumbs.db
 !/data/analytical/customer_segments_hierarchical.csv
 !/data/analytical/future_revenue_forecasts.csv
 !/data/analytical/forecast_model_comparison.csv
+!/data/analytical/inventory_analytics.csv
+!/data/analytical/customer_churn_predictions.csv
+!/data/analytical/anomaly_alerts.csv
+!/data/analytical/customer_sales_suggestions.csv

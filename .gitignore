@@ -35,3 +35,14 @@ Thumbs.db
 
 # Logs
 *.log
+# Temporary backup files
+*.backup*
+*.backup-*
+
+# Generated customer-level data (keep local unless reviewed)
+data/analytical/customer_churn_features.csv
+data/analytical/customer_churn_predictions.csv
+data/analytical/customer_product_interactions.csv
+
+# Local deployment and debugging files
+backend/check_database.py
